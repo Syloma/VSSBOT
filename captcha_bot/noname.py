@@ -119,7 +119,7 @@ def sablon_merkezini_bul(img_gray, dosya: str, beklenen_olcek: float):
 
 
 def renk_ve_sekille_merkezleri_bul(img):
-    """Şablon tutmazsa fotoğraftaki yeşil parça ve beyaz kesik kareyi bulur."""
+    """Şablon tutmazsa yeşil parça ve beyaz kesik kareyi bulur."""
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
     yukseklik, genislik = img.shape[:2]
 
@@ -188,20 +188,69 @@ def merkezleri_bul(img, gray, beklenen_sablon_olcegi):
         return hedef, parca, 1.0, 1.0, 1.0, 1.0, yontem, yontem
 
 
-def debug_gorseli_kaydet(img, hedef=None, parca=None) -> None:
+def slider_noktasini_bul(img, sx: float, sy: float) -> tuple[int, int]:
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    yukseklik, genislik = img.shape[:2]
+    # Fotoğraftaki slider noktası açık mavi/cyan.
+    maske = cv2.inRange(hsv, np.array([85, 60, 80]), np.array([115, 255, 255]))
+    konturlar, _ = cv2.findContours(maske, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    adaylar = []
+    for kontur in konturlar:
+        x, y, w, h = cv2.boundingRect(kontur)
+        alan = cv2.contourArea(kontur)
+        if alan < 15 or w < 4 or h < 4:
+            continue
+        if y < yukseklik * 0.45 or y > yukseklik * 0.80:
+            continue
+        if x > genislik * 0.35:
+            continue
+        adaylar.append((alan, x, y, w, h))
+    if adaylar:
+        _, x, y, w, h = max(adaylar)
+        return x + w // 2, y + h // 2
+    print("Mavi slider noktası bulunamadı; eski ölçekli başlangıç kullanılacak.")
+    return olcekli_nokta(SLIDER_START_X, SLIDER_START_Y, sx, sy)
+
+
+def dogrula_butonunu_bul(img, sx: float, sy: float) -> tuple[int, int]:
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    yukseklik, genislik = img.shape[:2]
+    # Kırmızı/pembe Doğrula butonu.
+    maske1 = cv2.inRange(hsv, np.array([0, 45, 120]), np.array([12, 255, 255]))
+    maske2 = cv2.inRange(hsv, np.array([165, 45, 120]), np.array([179, 255, 255]))
+    maske = cv2.bitwise_or(maske1, maske2)
+    maske = cv2.morphologyEx(maske, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+    konturlar, _ = cv2.findContours(maske, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    adaylar = []
+    for kontur in konturlar:
+        x, y, w, h = cv2.boundingRect(kontur)
+        alan = cv2.contourArea(kontur)
+        if alan < 600 or w < genislik * 0.20 or h < 18:
+            continue
+        if y < yukseklik * 0.55:
+            continue
+        adaylar.append((alan, x, y, w, h))
+    if adaylar:
+        _, x, y, w, h = max(adaylar)
+        return x + w // 2, y + h // 2
+    print("Kırmızı Doğrula butonu bulunamadı; eski ölçekli tıklama kullanılacak.")
+    return olcekli_nokta(TAMAM_X, TAMAM_Y, sx, sy)
+
+
+def debug_gorseli_kaydet(img, hedef=None, parca=None, slider=None, buton=None) -> None:
     kopya = img.copy()
     if hedef:
         cv2.circle(kopya, hedef, 12, (0, 0, 255), 3)
-        cv2.putText(
-            kopya, "bosluk", (hedef[0] + 15, hedef[1]),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2
-        )
+        cv2.putText(kopya, "bosluk", (hedef[0] + 15, hedef[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
     if parca:
         cv2.circle(kopya, parca, 12, (0, 255, 0), 3)
-        cv2.putText(
-            kopya, "parca", (parca[0] + 15, parca[1]),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2
-        )
+        cv2.putText(kopya, "parca", (parca[0] + 15, parca[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    if slider:
+        cv2.circle(kopya, slider, 12, (255, 0, 0), 3)
+        cv2.putText(kopya, "slider", (slider[0] + 15, slider[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+    if buton:
+        cv2.circle(kopya, buton, 12, (0, 255, 255), 3)
+        cv2.putText(kopya, "dogrula", (buton[0] + 15, buton[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2)
     cv2.imwrite(str(DEBUG_GORSEL), kopya)
     print(f"Debug CAPTCHA görseli kaydedildi: {DEBUG_GORSEL}")
 
@@ -243,8 +292,8 @@ def captchayi_gec():
             f"Parça Y={parca_y}, boşluk Y={hedef_y}, tolerans={y_tolerans}"
         )
 
-    slider_start_x, slider_start_y = olcekli_nokta(SLIDER_START_X, SLIDER_START_Y, sx, sy)
-    tamam_x, tamam_y = olcekli_nokta(TAMAM_X, TAMAM_Y, sx, sy)
+    slider_start_x, slider_start_y = slider_noktasini_bul(img, sx, sy)
+    tamam_x, tamam_y = dogrula_butonunu_bul(img, sx, sy)
 
     goruntu_mesafesi = hedef_x - parca_x
     slider_mesafesi = round(goruntu_mesafesi * HAREKET_ORANI)
@@ -259,11 +308,18 @@ def captchayi_gec():
         f"Ölçek: x={sx:.2f}, y={sy:.2f} | "
         f"Parça: {parca_x},{parca_y} ({parca_guveni:.0%}, ölçek {parca_olcegi:.2f}, {parca_yontemi}) | "
         f"Boşluk: {hedef_x},{hedef_y} ({hedef_guveni:.0%}, ölçek {hedef_olcegi:.2f}, {hedef_yontemi}) | "
-        f"Slider: {slider_start_x},{slider_start_y} -> {nihai_x},{slider_start_y}"
+        f"Slider: {slider_start_x},{slider_start_y} -> {nihai_x},{slider_start_y} | "
+        f"Doğrula: {tamam_x},{tamam_y}"
     )
-    debug_gorseli_kaydet(img, (hedef_x, hedef_y), (parca_x, parca_y))
+    debug_gorseli_kaydet(
+        img,
+        (hedef_x, hedef_y),
+        (parca_x, parca_y),
+        (slider_start_x, slider_start_y),
+        (tamam_x, tamam_y),
+    )
 
-    device.shell(f"input swipe {slider_start_x} {slider_start_y} {nihai_x} {slider_start_y} 850")
+    device.shell(f"input swipe {slider_start_x} {slider_start_y} {nihai_x} {slider_start_y} 950")
 
     time.sleep(1.5)
     device.shell(f"input tap {tamam_x} {tamam_y}")
