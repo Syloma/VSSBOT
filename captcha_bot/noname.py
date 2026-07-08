@@ -9,14 +9,16 @@ import numpy as np
 from ppadb.client import Client as AdbClient
 
 
-REFERANS_GENISLIK = 1600
-REFERANS_YUKSEKLIK = 900
-SLIDER_START_X = 573
-SLIDER_START_Y = 615
-TAMAM_X = 800
-TAMAM_Y = 825
+# Mac/emulator için referans ekran: dikey 1080x1920.
+# Görsel algılama başarısız olursa bu koordinatlar oranlanarak kullanılır.
+REFERANS_GENISLIK = 1080
+REFERANS_YUKSEKLIK = 1920
+SLIDER_START_X = 170
+SLIDER_START_Y = 1165
+TAMAM_X = 540
+TAMAM_Y = 1650
 
-HAREKET_ORANI = float(os.getenv("TICARION_CAPTCHA_HAREKET_ORANI", "1.10"))
+HAREKET_ORANI = float(os.getenv("TICARION_CAPTCHA_HAREKET_ORANI", "1.00"))
 HEDEF_OFFSET_X = int(os.getenv("TICARION_CAPTCHA_OFFSET_X", "0"))
 MIN_ESLESME_GUVENI = float(os.getenv("TICARION_CAPTCHA_MIN_GUVEN", "0.42"))
 
