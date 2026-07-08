@@ -149,7 +149,28 @@ class ChromeDOM:
             except (OSError, RuntimeError, urllib.error.URLError):
                 pass
             time.sleep(0.5)
-        raise TimeoutError(f"Sayfa öğesi bulunamadı: {secici}")
+        raise TimeoutError(f"Sayfa öğesi bulunamadı: {secici}. {self.sayfa_ozeti()}")
+
+    def sayfa_ozeti(self) -> str:
+        try:
+            sayfa = self._sayfa()
+            url = sayfa.get("url", "")
+        except Exception:
+            url = "okunamadı"
+        try:
+            bilgi = self.calistir("""
+                (() => ({
+                    title: document.title || '',
+                    text: (document.body?.innerText || '').replace(/\\s+/g, ' ').trim().slice(0, 500),
+                    ready: document.readyState || ''
+                }))()
+            """)
+        except Exception as hata:
+            return f"URL={url}; sayfa özeti okunamadı: {hata}"
+        return (
+            f"URL={url}; ready={bilgi.get('ready')}; "
+            f"title={bilgi.get('title')!r}; text={bilgi.get('text')!r}"
+        )
 
     def url_bekle(self, url_parcasi: str, saniye: int = 30) -> None:
         bitis = time.time() + saniye
