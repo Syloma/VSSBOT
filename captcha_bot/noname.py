@@ -9,8 +9,6 @@ import numpy as np
 from ppadb.client import Client as AdbClient
 
 
-# Bu değerler eski sabit ayarın alındığı referans ekran içindir.
-# Farklı çözünürlükte X/Y koordinatları ekran oranına göre ölçeklenir.
 REFERANS_GENISLIK = 1600
 REFERANS_YUKSEKLIK = 900
 SLIDER_START_X = 573
@@ -20,8 +18,6 @@ TAMAM_Y = 825
 
 HAREKET_ORANI = float(os.getenv("TICARION_CAPTCHA_HAREKET_ORANI", "1.10"))
 HEDEF_OFFSET_X = int(os.getenv("TICARION_CAPTCHA_OFFSET_X", "0"))
-# Mac/emulator görüntüsü Windows'a göre daha yumuşak/ölçekli geldiği için varsayılanı
-# biraz aşağı aldık. İstersen terminalden TICARION_CAPTCHA_MIN_GUVEN ile değiştirebilirsin.
 MIN_ESLESME_GUVENI = float(os.getenv("TICARION_CAPTCHA_MIN_GUVEN", "0.42"))
 
 KLASOR = Path(__file__).resolve().parent
@@ -122,6 +118,76 @@ def sablon_merkezini_bul(img_gray, dosya: str, beklenen_olcek: float):
     return merkez, en_iyi["guven"], en_iyi["olcek"], en_iyi["varyant"]
 
 
+def renk_ve_sekille_merkezleri_bul(img):
+    """Şablon tutmazsa fotoğraftaki yeşil parça ve beyaz kesik kareyi bulur."""
+    hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+    yukseklik, genislik = img.shape[:2]
+
+    yesil = cv2.inRange(hsv, np.array([35, 55, 55]), np.array([100, 255, 255]))
+    yesil = cv2.morphologyEx(yesil, cv2.MORPH_CLOSE, np.ones((5, 5), np.uint8))
+    konturlar, _ = cv2.findContours(yesil, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    yesil_adaylar = []
+    for kontur in konturlar:
+        x, y, w, h = cv2.boundingRect(kontur)
+        alan = cv2.contourArea(kontur)
+        if alan < 18 or w < 4 or h < 4:
+            continue
+        if y < yukseklik * 0.20 or y > yukseklik * 0.75:
+            continue
+        yesil_adaylar.append((alan, x, y, w, h))
+    if not yesil_adaylar:
+        raise RuntimeError("Yeşil CAPTCHA parçası renk yöntemiyle bulunamadı.")
+
+    _, x, y, w, h = max(yesil_adaylar)
+    parca = (x + w // 2, y + h // 2)
+
+    band_y1 = max(0, parca[1] - round(100 * yukseklik / REFERANS_YUKSEKLIK))
+    band_y2 = min(yukseklik, parca[1] + round(100 * yukseklik / REFERANS_YUKSEKLIK))
+    band = img[band_y1:band_y2]
+    hsv_band = cv2.cvtColor(band, cv2.COLOR_BGR2HSV)
+    beyaz = cv2.inRange(hsv_band, np.array([0, 0, 140]), np.array([179, 110, 255]))
+    beyaz = cv2.morphologyEx(beyaz, cv2.MORPH_CLOSE, np.ones((13, 13), np.uint8))
+    beyaz = cv2.dilate(beyaz, np.ones((5, 5), np.uint8), iterations=1)
+    konturlar, _ = cv2.findContours(beyaz, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    hedef_adaylari = []
+    for kontur in konturlar:
+        bx, by, bw, bh = cv2.boundingRect(kontur)
+        global_x = bx
+        global_y = band_y1 + by
+        if global_x <= parca[0] + 20:
+            continue
+        oran = bw / max(1, bh)
+        if not 0.55 <= oran <= 1.55:
+            continue
+        if bw < 18 or bh < 18 or bw > genislik * 0.25 or bh > yukseklik * 0.20:
+            continue
+        alan = cv2.contourArea(kontur)
+        hedef_adaylari.append((alan, global_x, global_y, bw, bh))
+
+    if not hedef_adaylari:
+        raise RuntimeError("Beyaz CAPTCHA boşluğu renk/şekil yöntemiyle bulunamadı.")
+
+    _, bx, by, bw, bh = max(hedef_adaylari)
+    hedef = (bx + bw // 2, by + bh // 2)
+    return hedef, parca, "renk-sekil"
+
+
+def merkezleri_bul(img, gray, beklenen_sablon_olcegi):
+    try:
+        hedef, hedef_guveni, hedef_olcegi, hedef_yontemi = sablon_merkezini_bul(
+            gray, "bosluk.png", beklenen_sablon_olcegi
+        )
+        parca, parca_guveni, parca_olcegi, parca_yontemi = sablon_merkezini_bul(
+            gray, "parca.png", beklenen_sablon_olcegi
+        )
+        return hedef, parca, hedef_guveni, parca_guveni, hedef_olcegi, parca_olcegi, hedef_yontemi, parca_yontemi
+    except Exception as sablon_hatasi:
+        print(f"Şablon yöntemi başarısız; renk/şekil yöntemi deneniyor: {sablon_hatasi}")
+        hedef, parca, yontem = renk_ve_sekille_merkezleri_bul(img)
+        return hedef, parca, 1.0, 1.0, 1.0, 1.0, yontem, yontem
+
+
 def debug_gorseli_kaydet(img, hedef=None, parca=None) -> None:
     kopya = img.copy()
     if hedef:
@@ -155,12 +221,16 @@ def captchayi_gec():
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     try:
-        (hedef_x, hedef_y), hedef_guveni, hedef_olcegi, hedef_yontemi = sablon_merkezini_bul(
-            gray, "bosluk.png", beklenen_sablon_olcegi
-        )
-        (parca_x, parca_y), parca_guveni, parca_olcegi, parca_yontemi = sablon_merkezini_bul(
-            gray, "parca.png", beklenen_sablon_olcegi
-        )
+        (
+            (hedef_x, hedef_y),
+            (parca_x, parca_y),
+            hedef_guveni,
+            parca_guveni,
+            hedef_olcegi,
+            parca_olcegi,
+            hedef_yontemi,
+            parca_yontemi,
+        ) = merkezleri_bul(img, gray, beklenen_sablon_olcegi)
     except Exception:
         debug_gorseli_kaydet(img)
         raise
