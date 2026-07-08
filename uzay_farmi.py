@@ -1,5 +1,7 @@
 """Yalnız JackTheRipper ve YAVUZ 54 hesaplarında uzay farmı çalıştırır."""
 
+from __future__ import annotations
+
 import subprocess
 import time
 import unicodedata
