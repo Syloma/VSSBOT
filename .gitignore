@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.Python
+.venv/
+venv/
+env/
+
+# Yerel hesap/şifre ve runtime verileri
+hesaplar.json
+kazanc_kayitlari.db
+kazanc_kayitlari.db-*
+kazanc_kayitlari.jsonl
+*.log
+*.tmp
+loglar/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
