@@ -176,6 +176,7 @@ def renk_ve_sekille_merkezleri_bul(img):
 
 
 def merkezleri_bul(img, gray, beklenen_sablon_olcegi):
+    yukseklik, genislik = img.shape[:2]
     try:
         hedef, hedef_guveni, hedef_olcegi, hedef_yontemi = sablon_merkezini_bul(
             gray, "bosluk.png", beklenen_sablon_olcegi
@@ -183,12 +184,20 @@ def merkezleri_bul(img, gray, beklenen_sablon_olcegi):
         parca, parca_guveni, parca_olcegi, parca_yontemi = sablon_merkezini_bul(
             gray, "parca.png", beklenen_sablon_olcegi
         )
+        if not (yukseklik * 0.20 <= parca[1] <= yukseklik * 0.75):
+            raise RuntimeError(f"?ablon par?a konumu mant?ks?z: {parca}")
+        if not (yukseklik * 0.20 <= hedef[1] <= yukseklik * 0.75):
+            raise RuntimeError(f"?ablon bo?luk konumu mant?ks?z: {hedef}")
+        y_tolerans = max(35, round(35 * yukseklik / REFERANS_YUKSEKLIK))
+        if abs(hedef[1] - parca[1]) > y_tolerans:
+            raise RuntimeError(
+                f"?ablon par?a/bo?luk hizas? tutars?z: par?a={parca}, bo?luk={hedef}, tolerans={y_tolerans}"
+            )
         return hedef, parca, hedef_guveni, parca_guveni, hedef_olcegi, parca_olcegi, hedef_yontemi, parca_yontemi
     except Exception as sablon_hatasi:
-        print(f"Şablon yöntemi başarısız; renk/şekil yöntemi deneniyor: {sablon_hatasi}")
+        print(f"?ablon y?ntemi ba?ar?s?z; renk/?ekil y?ntemi deneniyor: {sablon_hatasi}")
         hedef, parca, yontem = renk_ve_sekille_merkezleri_bul(img)
         return hedef, parca, 1.0, 1.0, 1.0, 1.0, yontem, yontem
-
 
 def slider_noktasini_bul(img, sx: float, sy: float) -> tuple[int, int]:
     hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
